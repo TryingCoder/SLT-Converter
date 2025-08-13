@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="SLT Converter",
+    name="slt-converter",
     version="0.1.0",
     author="Ethan Brand",
     author_email="brandet251@gmail.com",
