@@ -1,0 +1,4 @@
+libreoffice-python-uno
+pandas
+openpyxl
+tqdm
