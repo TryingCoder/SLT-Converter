@@ -5,7 +5,7 @@ setup(
     version="0.1.0",
     author="Ethan Brand",
     author_email="brandet251@gmail.com",
-    description="File converter currently only supports converting QPW files to XLSX format.",
+    description="AIO File Converter - In Progress",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/TryingCoder/SLT-Converter",
@@ -18,7 +18,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "slt-converter=converter:main",
+            "slt-converter=slt_converter.converter:main",
         ],
     },
     classifiers=[
