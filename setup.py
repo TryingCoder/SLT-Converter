@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="slt-converter",
-    version="1.0.0",
+    version="0.1.1",
     description="BETA | QPW to XLSX Converter - More features coming soon!",
     author="TryingCoder",
     packages=find_packages(where="src"),
