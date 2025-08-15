@@ -7,11 +7,13 @@ import tempfile
 import importlib.util
 import site
 import argparse
+import requests
+from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 # -----------------------------
-# Version
+# Version (Beta)
 # -----------------------------
 __version__ = "0.1.1"
 
@@ -105,18 +107,31 @@ def find_soffice():
             return path
     return None
 
+def get_latest_libreoffice_windows_url():
+    """Scrape LibreOffice download page to find latest Windows x86_64 MSI URL."""
+    base_url = "https://download.documentfoundation.org/libreoffice/stable/"
+    resp = requests.get(base_url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    versions = [a.text.strip("/") for a in soup.find_all("a") if a.text[0].isdigit()]
+    latest_version = sorted(versions, key=lambda s: list(map(int, s.split("."))))[-1]
+    return f"{base_url}{latest_version}/win/x86_64/LibreOffice_{latest_version}_Win_x64.msi"
+
 def install_libreoffice():
     """Install LibreOffice CLI tools headlessly (Windows or Linux)."""
     print("\nLibreOffice CLI not found. Installing...")
     if sys.platform == "win32":
-        url = "https://download.documentfoundation.org/libreoffice/stable/7.6.4/win/x86_64/LibreOffice_7.6.4_Win_x64.msi"
+        try:
+            url = get_latest_libreoffice_windows_url()
+        except Exception as e:
+            print(f"❌ Could not fetch latest LibreOffice version: {e}")
+            return
         installer = os.path.join(tempfile.gettempdir(), "LibreOffice.msi")
         subprocess.run(["powershell", "-Command", f"Invoke-WebRequest -Uri {url} -OutFile {installer}"], check=True)
         print("Installing LibreOffice headlessly...")
         subprocess.run(["msiexec", "/i", installer, "/quiet", "/norestart"], check=True)
         os.remove(installer)
     elif sys.platform.startswith("linux"):
-        # Use apt or yum depending on distro
         if shutil.which("apt"):
             subprocess.run(["sudo", "apt", "update"], check=True)
             subprocess.run(["sudo", "apt", "install", "-y", "libreoffice"], check=True)
@@ -206,22 +221,16 @@ def main():
     parser.add_argument("--version", "-v", action="store_true", help="Show the installed version and exit")
     args = parser.parse_args()
 
-    # -----------------------------
-    # Version / Update handling
-    # -----------------------------
     if args.version:
         print(f"SLT-Converter version {__version__}")
         return
 
     if args.update:
-        print("\nUpdating SLT-Converter from GitHub...")
+        print("\nUpdating SLT-Converter from GitHub...\n")
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
-        print("Update complete!")
+        print("\nUpdate complete!")
         return
 
-    # -----------------------------
-    # Ensure source/dest
-    # -----------------------------
     if not args.source or not os.path.isdir(args.source):
         print(f"❌ Source folder does not exist: {args.source}")
         return
@@ -233,9 +242,6 @@ def main():
     failed_folder = os.path.join(args.dest, "Failed")
     ensure_dir(failed_folder)
 
-    # -----------------------------
-    # Backup with tqdm
-    # -----------------------------
     if args.backup:
         ensure_dir(args.backup)
         files_to_backup = [f for f in os.listdir(args.source) if f.lower().endswith(".qpw")]
@@ -245,9 +251,6 @@ def main():
                 pbar.update(1)
         print(f"✅ Backup completed at: {args.backup}")
 
-    # -----------------------------
-    # Ensure LibreOffice
-    # -----------------------------
     soffice_path = find_soffice()
     if soffice_path is None:
         choice = input("\nLibreOffice CLI not found. Install now? (Y/N): ").strip().lower()
@@ -261,9 +264,6 @@ def main():
             print("❌ Install LibreOffice CLI first.")
             return
 
-    # -----------------------------
-    # Temp working directory
-    # -----------------------------
     working_dir = tempfile.mkdtemp(prefix="qpw_work_")
     try:
         copy_files(args.source, working_dir, ext=".qpw", progress_desc=f"Populating working directory: {working_dir}")
@@ -274,9 +274,6 @@ def main():
         shutil.rmtree(working_dir)
         print(f"\nTemp working directory removed: {working_dir}")
 
-    # -----------------------------
-    # Summary
-    # -----------------------------
     total_files = len([f for f in os.listdir(args.source) if f.lower().endswith('.qpw')])
     converted_files = len(succeeded)
     failed_files = len(failed)
