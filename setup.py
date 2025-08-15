@@ -11,7 +11,7 @@ setup(
         "pandas>=2.0",
         "openpyxl>=3.0",
         "tqdm>=4.60"
-        "requests>=2.31.0"
+        "requests>=2.31.0",
     ],
     entry_points={
         "console_scripts": [
