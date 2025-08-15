@@ -8,7 +8,7 @@ Installers:
   - Architecture: x64
     InstallerType: exe
     InstallerUrl: https://github.com/TryingCoder/SLT-Converter/releases/download/v0.1.0/slt_converter.exe
-    InstallerSha256: <SHA256_HASH_HERE>
+    InstallerSha256: 8C6C6C4DB002AE890C199D63CC4E2A90E0BE9B8143039D207A87FE6F07466BC2
     Switches:
       Silent: /S
       SilentWithProgress: /S
