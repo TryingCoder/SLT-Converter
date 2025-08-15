@@ -1,46 +1,60 @@
 import os
 import sys
+import ctypes
 import subprocess
 
 def get_scripts_path():
-    """Get he user-specific Python Scripts folder path."""
-    user_base = os.path.expanduser("~")
-    # Get Python version
-    py_version = f"Python{sys.version_info.major}{sys.version_info.minor}"
-    scripts_path = os.path.join(user_base, "AppData", "Roaming", "Python", py_version, "Scripts")
+    """Return the user Scripts folder path."""
+    scripts_path = os.path.join(sys.prefix, "Scripts")
     return scripts_path
 
 def is_in_path(path):
-    """Check if a given path is in the current PATH environment variable."""
+    """Check if a folder is already in PATH."""
     current_paths = os.environ.get("PATH", "").split(os.pathsep)
     return any(os.path.normcase(path) == os.path.normcase(p) for p in current_paths)
 
-def add_to_path_prompt():
-    """Prompt user to add Scripts folder to PATH permanently."""
-    scripts_path = get_scripts_path()
-    if not os.path.exists(scripts_path):
-        print(f"Scripts folder does not exist: {scripts_path}")
-        print("You may need to run `pip install --user` first to create it.")
-        return
+def add_to_user_path(path):
+    """Add a folder to the user PATH via registry (requires admin for system PATH)."""
+    try:
+        # Use setx to modify user PATH
+        subprocess.run(
+            ['setx', 'PATH', f"%PATH%;{path}"],
+            shell=True,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        print(f"\n✅ Added {path} to your user PATH. Restart terminal to apply changes.")
+    except Exception as e:
+        print(f"\n❌ Failed to add PATH automatically. Please add {path} to PATH manually.")
+        print(f"Error: {e}")
 
+def add_scripts_to_path():
+    """Check and optionally add Python Scripts folder to PATH on Windows."""
+    if os.name != "nt":
+        return  # Only for Windows
+
+    scripts_path = get_scripts_path()
     if is_in_path(scripts_path):
         return  # Already in PATH
 
-    print(f"\nPython Scripts folder not found in PATH:\n  {scripts_path}")
-    choice = input("Add slt-converter to PATH? (Y)es/(N)o: ").strip().lower()
-    if choice not in ["y", "yes"]:
-        print("Skipping PATH update. You will need to run the CLI using full path or add it manually.")
-        return
+    print(f"\nThe Python Scripts folder is not in your PATH:\n{scripts_path}")
+    choice = input("Do you want to add it now? (Y/N): ").strip().lower()
+    if choice in ["y", "yes"]:
+        # Check for admin privileges
+        try:
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            is_admin = False
 
-    try:
-        # Use setx to add to user PATH
-        current_path = os.environ.get("PATH", "")
-        new_path = f"{scripts_path};{current_path}"
-        subprocess.run(f'setx PATH "{new_path}"', shell=True, check=True)
-        print("\nScripts folder added to user PATH. You may need to restart your terminal.")
-    except Exception as e:
-        print(f"Failed to update PATH: {e}")
+        if is_admin:
+            add_to_user_path(scripts_path)
+        else:
+            print("\n⚠ You need to run this script with administrator privileges to auto-add PATH.")
+            print("You can add the following folder manually to your PATH:")
+            print(f"  {scripts_path}")
+    else:
+        print("\n⚠ PATH not modified. You need to add the Scripts folder manually to use CLI commands directly.")
 
-def ensure_path():
-    if os.name == "nt":
-        add_to_path_prompt()
+if __name__ == "__main__":
+    add_scripts_to_path()
