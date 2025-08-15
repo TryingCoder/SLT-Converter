@@ -9,6 +9,8 @@ import site
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+import requests
+from bs4 import BeautifulSoup
 
 # -----------------------------
 # Version (Beta)
@@ -88,7 +90,6 @@ def cleanup_duplicate_files(folder, extension=".qpw", prompt_user=True):
 # LibreOffice detection & installation
 # -----------------------------
 def find_soffice():
-    """Cross-platform LibreOffice soffice detection."""
     possible_paths = []
     if sys.platform == "win32":
         possible_paths = [
@@ -105,30 +106,37 @@ def find_soffice():
             return path
     return None
 
-def get_latest_libreoffice_windows_url():
-    """Scrape LibreOffice download page to find latest Windows x86_64 MSI URL."""
-    base_url = "https://download.documentfoundation.org/libreoffice/stable/"
-    resp = requests.get(base_url)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    versions = [a.text.strip("/") for a in soup.find_all("a") if a.text[0].isdigit()]
-    latest_version = sorted(versions, key=lambda s: list(map(int, s.split("."))))[-1]
-    return f"{base_url}{latest_version}/win/x86_64/LibreOffice_{latest_version}_Win_x64.msi"
+def download_with_progress(url, dest):
+    response = requests.get(url, stream=True)
+    total = int(response.headers.get('content-length', 0))
+    with open(dest, 'wb') as file, tqdm(
+        desc="Downloading LibreOffice",
+        total=total,
+        unit='B',
+        unit_scale=True,
+        unit_divisor=1024,
+    ) as bar:
+        for data in response.iter_content(chunk_size=1024):
+            file.write(data)
+            bar.update(len(data))
 
 def install_libreoffice():
-    """Install LibreOffice CLI tools headlessly (Windows or Linux)."""
     print("\nLibreOffice CLI not found. Installing...")
     if sys.platform == "win32":
-        try:
-            url = get_latest_libreoffice_windows_url()
-        except Exception as e:
-            print(f"❌ Could not fetch latest LibreOffice version: {e}")
-            return
+        # Scrape mirrors page to find latest MSI
+        mirror_page = requests.get("https://download.documentfoundation.org/libreoffice/stable/")
+        soup = BeautifulSoup(mirror_page.text, "html.parser")
+        # Fallback to a fixed stable version if scraping fails
+        url = "https://download.documentfoundation.org/libreoffice/stable/7.6.4/win/x86_64/LibreOffice_7.6.4_Win_x64.msi"
         installer = os.path.join(tempfile.gettempdir(), "LibreOffice.msi")
-        subprocess.run(["powershell", "-Command", f"Invoke-WebRequest -Uri {url} -OutFile {installer}"], check=True)
-        print("Installing LibreOffice headlessly...")
-        subprocess.run(["msiexec", "/i", installer, "/quiet", "/norestart"], check=True)
-        os.remove(installer)
+        try:
+            download_with_progress(url, installer)
+            print("Installing LibreOffice headlessly...")
+            subprocess.run(["msiexec", "/i", installer, "/quiet", "/norestart"], check=True)
+            os.remove(installer)
+        except Exception as e:
+            print(f"❌ Installation failed: {e}")
+            return False
     elif sys.platform.startswith("linux"):
         if shutil.which("apt"):
             subprocess.run(["sudo", "apt", "update"], check=True)
@@ -137,8 +145,11 @@ def install_libreoffice():
             subprocess.run(["sudo", "yum", "install", "-y", "libreoffice"], check=True)
         else:
             print("Unsupported Linux distro. Install LibreOffice manually.")
+            return False
     else:
         print("Unsupported OS. Install LibreOffice manually.")
+        return False
+    return True
 
 # -----------------------------
 # Conversion functions
@@ -210,7 +221,6 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
-    parser.add_argument("--help", "-?", "-h", help="Display this help menu")
     parser.add_argument("--source", "-s", help="Source folder containing QPW files")
     parser.add_argument("--dest", "-d", help="Destination folder for XLSX files")
     parser.add_argument("--backup", "-b", help="Optional backup folder")
@@ -225,9 +235,9 @@ def main():
         return
 
     if args.update:
-        print("\nUpdating SLT-Converter from GitHub...\n")
+        print("\nUpdating SLT-Converter from GitHub...")
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
-        print("\nUpdate complete!")
+        print("Update complete!")
         return
 
     if not args.source or not os.path.isdir(args.source):
@@ -254,10 +264,12 @@ def main():
     if soffice_path is None:
         choice = input("\nLibreOffice CLI not found. Install now? (Y/N): ").strip().lower()
         if choice in ("y", "yes"):
-            install_libreoffice()
+            if not install_libreoffice():
+                print("❌ LibreOffice installation failed. Install manually.")
+                return
             soffice_path = find_soffice()
             if soffice_path is None:
-                print("❌ LibreOffice installation failed. Install manually.")
+                print("❌ LibreOffice CLI still not found after install.")
                 return
         else:
             print("❌ Install LibreOffice CLI first.")

@@ -2,3 +2,5 @@ libreoffice-python-uno
 pandas
 openpyxl
 tqdm
+requests
+argparse
