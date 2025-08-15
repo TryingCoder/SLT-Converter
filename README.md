@@ -32,11 +32,11 @@ pip install git+https://github.com/TryingCoder/SLT-Converter
 ```bash
 slt --source ./qpw_files --dest ./xlsx_output
 ```
-## Skip duplicates
+## Skip duplicate check
 ```bash
 slt --source ./qpw_files --dest ./xlsx_output --skip-duplicates
 ```
-## Set concurrency
+## Define max workers (Concurrent conversions - Default = 4)
 ```bash
 slt --source ./qpw_files --dest ./xlsx_output --workers 8
 ```
@@ -57,4 +57,5 @@ slt -?
 
 - Failed conversions are copied to a Failed folder inside the destination directory.
 - Temporary working folders are automatically cleaned up.
-- Ensure LibreOffice CLI tools are installed and available in your PATH (soffice.exe on Windows, soffice on macOS/Linux).
+- Working on expansion to add more features
+- Submit requests to thebrandbackup1@gmail.com or feel free to contribute :D

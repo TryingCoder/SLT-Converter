@@ -8,6 +8,8 @@ import importlib.util
 import site
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+import urllib.request
 
 # -----------------------------
 # Ensure tqdm installed
@@ -16,14 +18,8 @@ def ensure_tqdm_installed():
     if importlib.util.find_spec("tqdm") is None:
         print("Installing required package: tqdm...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-warn-script-location", "tqdm"])
-    user_site = site.getusersitepackages()
-    if user_site not in sys.path and os.path.exists(user_site):
-        sys.path.append(user_site)
-    global tqdm
-    from tqdm import tqdm
 
 ensure_tqdm_installed()
-from tqdm import tqdm
 
 # -----------------------------
 # Utility Functions
@@ -80,7 +76,7 @@ def cleanup_duplicate_files(folder, extension=".qpw", prompt_user=True):
         return 0
 
 # -----------------------------
-# LibreOffice detection
+# LibreOffice detection & installation
 # -----------------------------
 def find_soffice():
     """Cross-platform LibreOffice soffice detection."""
@@ -98,6 +94,26 @@ def find_soffice():
         if os.path.exists(path):
             return path
     return None
+
+class DownloadProgressBar(tqdm):
+    def update_to(self, b=1, bsize=1, tsize=None):
+        if tsize is not None:
+            self.total = tsize
+        self.update(b * bsize - self.n)
+
+def install_libreoffice():
+    print("\nDownloading LibreOffice installer...")
+    url = "https://download.documentfoundation.org/libreoffice/stable/7.6.0/win/x86_64/LibreOffice_7.6.0_Win_x64.msi"
+    temp_file = os.path.join(tempfile.gettempdir(), "LibreOffice.msi")
+
+    with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc="Downloading") as t:
+        urllib.request.urlretrieve(url, filename=temp_file, reporthook=t.update_to)
+
+    print("\nInstalling LibreOffice silently...")
+    with tqdm(total=1, desc="Installing", unit="step") as pbar:
+        subprocess.run(["msiexec", "/i", temp_file, "/quiet", "/norestart"], check=True)
+        pbar.update(1)
+    print("LibreOffice installation complete.")
 
 # -----------------------------
 # Conversion functions
@@ -170,49 +186,36 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # Main CLI
 # -----------------------------
 def main():
-    parser = argparse.ArgumentParser(
-        description="SLT-Converter: Batch convert QPW files to XLSX using LibreOffice.",
-        add_help=False  # disable default help to allow -? alias
-    )
-
-    # Help options
-    parser.add_argument("-?", action="help", help="Show this help message and exit")
-    parser.add_argument("--help", action="help", help="Show this help message and exit")
-
-    # Core options
-    parser.add_argument("--source", "-s", help="Source folder containing QPW files")
-    parser.add_argument("--dest", "-d", help="Destination folder for XLSX files")
+    parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
+    parser.add_argument("--source", "-s", required=True, help="Source folder containing QPW files")
+    parser.add_argument("--dest", "-d", required=True, help="Destination folder for XLSX files")
     parser.add_argument("--backup", "-b", help="Optional backup folder")
     parser.add_argument("--workers", "-w", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--skip-duplicates", action="store_true", help="Skip duplicate file prompt")
     parser.add_argument("--update", action="store_true", help="Update SLT-Converter from GitHub")
-
     args = parser.parse_args()
 
     if args.update:
-        print("\nUpdating SLT-Converter from GitHub...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade",
-                        "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
         print("Update complete!")
         return
 
-    # Validate required paths
-    if not args.source or not os.path.isdir(args.source):
-        print(f"❌ Invalid or missing source folder: {args.source}")
+    if not os.path.isdir(args.source):
+        print(f"❌ Source folder does not exist: {args.source}")
         return
-    if not args.dest:
-        print("❌ Destination folder not specified")
-        return
-    ensure_dir(args.dest)
 
+    ensure_dir(args.dest)
     failed_folder = os.path.join(args.dest, "Failed")
     ensure_dir(failed_folder)
 
-    # Backup if requested
+    # Backup with tqdm
     if args.backup:
         ensure_dir(args.backup)
-        for f in [f for f in os.listdir(args.source) if f.lower().endswith(".qpw")]:
-            shutil.copy2(os.path.join(args.source, f), os.path.join(args.backup, f))
+        backup_files = [f for f in os.listdir(args.source) if f.lower().endswith(".qpw")]
+        with tqdm(total=len(backup_files), desc="Creating Backup", unit="file") as pbar:
+            for f in backup_files:
+                shutil.copy2(os.path.join(args.source, f), os.path.join(args.backup, f))
+                pbar.update(1)
         print(f"✅ Backup completed at: {args.backup}")
 
     # Temp working directory
@@ -221,10 +224,17 @@ def main():
         copy_files(args.source, working_dir, ext=".qpw", progress_desc="Populating working directory")
         duplicates_removed = cleanup_duplicate_files(working_dir, extension=".qpw", prompt_user=not args.skip_duplicates)
 
+        # LibreOffice detection + optional install
         soffice_path = find_soffice()
         if soffice_path is None:
-            print("LibreOffice CLI not found. Install LibreOffice first.")
-            return
+            print("\n❌ LibreOffice CLI tools not found.")
+            choice = input("Do you want to install LibreOffice CLI tools now? (Y/N): ").strip().lower()
+            if choice in ("y", "yes"):
+                install_libreoffice()
+                soffice_path = find_soffice()
+            if soffice_path is None:
+                print("LibreOffice installation failed or not found. Exiting.")
+                return
 
         print(f"\nConverting {len([f for f in os.listdir(working_dir) if f.lower().endswith('.qpw')])} files...")
         succeeded, failed = convert_all_with_retries(working_dir, args.dest, failed_folder, args.workers, soffice_path)

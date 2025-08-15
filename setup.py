@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="slt-converter",
     version="1.0.0",
-    description="Convert QPW files to XLSX using LibreOffice in headless mode",
+    description="BETA | QPW to XLSX Converter - More features coming soon!",
     author="TryingCoder",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
@@ -18,5 +18,7 @@ setup(
         ],
     },
     python_requires=">=3.10",
+    include_package_data=True,
     zip_safe=False,
+    url="https://github.com/TryingCoder/SLT-Converter",
 )
