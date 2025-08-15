@@ -221,6 +221,7 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
+    parser.add_argument("-?", "--help", action="help", help="Display this help menu")
     parser.add_argument("--source", "-s", help="Source folder containing QPW files")
     parser.add_argument("--dest", "-d", help="Destination folder for XLSX files")
     parser.add_argument("--backup", "-b", help="Optional backup folder")
@@ -235,9 +236,9 @@ def main():
         return
 
     if args.update:
-        print("\nUpdating SLT-Converter from GitHub...")
+        print("\nUpdating SLT-Converter from GitHub...\n")
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
-        print("Update complete!")
+        print("\nUpdate complete!\n")
         return
 
     if not args.source or not os.path.isdir(args.source):
