@@ -1,148 +1,144 @@
 import os
-import re
-import shutil
-import subprocess
 import sys
+import subprocess
 import tempfile
-import importlib.util
-import site
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from slt_converter.utils import is_qpw, find_dupes
+from .utils import validate_file_format
 
 # -----------------------------
 # Ensure tqdm installed
 # -----------------------------
 def ensure_tqdm():
-    if importlib.util.find_spec("tqdm") is None:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-warn-script-location", "tqdm"])
-    user_site = site.getusersitepackages()
-    if user_site not in sys.path and os.path.exists(user_site):
-        sys.path.append(user_site)
-    global tqdm
-    from tqdm import tqdm
+    try:
+        import tqdm
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
+        import tqdm
+    return tqdm
 
-ensure_tqdm()
+tqdm = ensure_tqdm()
 
-# -----------------------------
-# LibreOffice detection
-# -----------------------------
+SOFFICE_PATH = None
+
 def find_soffice():
+    import shutil
     paths = [
         r"C:\Program Files\LibreOffice\program\soffice.exe",
         r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"
     ]
     for p in paths:
-        if os.path.exists(p):
+        if os.path.isfile(p):
             return p
-    raise FileNotFoundError("LibreOffice CLI not found. Install LibreOffice CLI tools.")
+    # Try in PATH
+    soffice_in_path = shutil.which("soffice")
+    if soffice_in_path:
+        return soffice_in_path
+    return None
 
-SOFFICE = find_soffice()
-
-# -----------------------------
-# Utility functions
-# -----------------------------
-def mkdir(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
 
 def copy_files(src, dst, ext=".qpw", desc="Copying"):
     files = [f for f in os.listdir(src) if f.lower().endswith(ext.lower())]
-    mkdir(dst)
-    from tqdm import tqdm
-    with tqdm(total=len(files), desc=desc, unit="file") as pbar:
+    ensure_dir(dst)
+    with tqdm.tqdm(total=len(files), desc=desc, unit="file") as pbar:
         for f in files:
             shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
             pbar.update(1)
 
-def cleanup_dupes(folder, ext=".qpw", prompt=True):
-    dupes = find_dupes(folder, ext)
-    if dupes and prompt:
-        print("\nDuplicates found:")
-        for f in dupes:
-            print(" -", f)
-        if input("Remove duplicates? (Y/N): ").strip().lower() in ["y","yes"]:
-            from tqdm import tqdm
-            with tqdm(total=len(dupes), desc="Removing Duplicates") as pbar:
-                for f in dupes:
-                    os.remove(os.path.join(folder, f))
-                    pbar.update(1)
-            return len(dupes)
-    return 0
-
-def convert_file(src_file, out_dir):
-    out_file = os.path.join(out_dir, os.path.basename(src_file).replace(".qpw",".xlsx"))
-    if os.path.exists(out_file):
+def convert_file(input_file, out_dir):
+    output_file = os.path.join(out_dir, os.path.basename(input_file).replace(".qpw", ".xlsx"))
+    if os.path.exists(output_file):
         return True
     try:
-        cmd = [SOFFICE, "--headless", "--convert-to", "xlsx", src_file, "--outdir", out_dir]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return os.path.exists(out_file)
+        subprocess.run([SOFFICE_PATH, "--headless", "--convert-to", "xlsx", input_file, "--outdir", out_dir],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return os.path.exists(output_file)
     except Exception:
         return False
 
-def convert_all(src_folder, out_folder, failed_folder, max_workers=4):
-    mkdir(failed_folder)
-    all_files = [f for f in os.listdir(src_folder) if is_qpw(f)]
+def convert_all(src_folder, dest_folder, failed_folder, max_workers=4):
+    ensure_dir(failed_folder)
+    all_files = [f for f in os.listdir(src_folder) if f.lower().endswith(".qpw")]
     pending = set(all_files)
     succeeded = set()
-    last_count = len(pending)
-    from tqdm import tqdm
-    with tqdm(total=len(all_files), desc="Converting", unit="file") as pbar:
+    last_pending = len(pending)
+
+    with tqdm.tqdm(total=len(all_files), desc="Converting", unit="file") as pbar:
         attempt = 1
         while pending:
-            current = list(pending)
             failed_this_round = set()
-            with ThreadPoolExecutor(max_workers=max_workers) as exe:
-                futures = {exe.submit(convert_file, os.path.join(src_folder, f), out_folder): f for f in current}
+            current_files = list(pending)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(convert_file, os.path.join(src_folder, f), dest_folder): f for f in current_files}
                 for fut in as_completed(futures):
                     f = futures[fut]
-                    if fut.result():
+                    success = fut.result()
+                    if success:
                         if f not in succeeded:
                             pbar.update(1)
                             succeeded.add(f)
-                            pending.discard(f)
-                        fp = os.path.join(failed_folder, f)
-                        if os.path.exists(fp):
-                            os.remove(fp)
+                        pending.discard(f)
+                        # Remove from failed folder
+                        failed_path = os.path.join(failed_folder, f)
+                        if os.path.exists(failed_path):
+                            os.remove(failed_path)
                     else:
                         failed_this_round.add(f)
-                        dst = os.path.join(failed_folder, f)
-                        if not os.path.exists(dst):
-                            shutil.copy2(os.path.join(src_folder, f), dst)
-            if not failed_this_round or len(failed_this_round) == last_count:
+                        src_file = os.path.join(src_folder, f)
+                        dst_file = os.path.join(failed_folder, f)
+                        if not os.path.exists(dst_file):
+                            shutil.copy2(src_file, dst_file)
+
+            if not failed_this_round or len(failed_this_round) == last_pending:
                 break
             pending = failed_this_round
-            last_count = len(pending)
+            last_pending = len(pending)
             attempt += 1
+
     return succeeded, pending
 
-# -----------------------------
-# Main CLI
-# -----------------------------
 def main():
-    src = input("Enter SOURCE folder path: ").strip()
-    while not os.path.isdir(src):
-        src = input("Invalid path. Enter SOURCE folder path: ").strip()
-    dst = input("Enter DESTINATION folder path: ").strip()
-    mkdir(dst)
-    failed = os.path.join(dst, "Failed")
-    mkdir(failed)
-    max_workers = int(sys.argv[1]) if len(sys.argv) > 1 else 4
-    temp_dir = tempfile.mkdtemp(prefix="qpw_work_")
-    print(f"Temp working directory: {temp_dir}")
-    copy_files(src, temp_dir, desc="Populating")
-    dup_removed = cleanup_dupes(temp_dir)
-    print(f"Converting {len([f for f in os.listdir(temp_dir) if is_qpw(f)])} files...")
-    succeeded, failed_files = convert_all(temp_dir, dst, failed, max_workers)
-    shutil.rmtree(temp_dir)
-    print(f"Temp folder removed: {temp_dir}")
-    print("\n===== Summary =====")
-    print(f"✅ Total files: {len([f for f in os.listdir(src) if is_qpw(f)])}")
-    print(f"✅ Converted: {len(succeeded)}")
-    print(f"❌ Failed: {len(failed_files)}")
-    print(f"✅ Duplicates removed: {dup_removed}")
-    if not failed_files and os.path.exists(failed):
-        os.rmdir(failed)
-    print("===================")
-    print("All done!")
+    global SOFFICE_PATH
 
+    # Handle --update first
+    if len(sys.argv) > 1 and sys.argv[1] == "--update":
+        print("Updating SLT-Converter from GitHub...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade",
+                               "git+https://github.com/TryingCoder/SLT-Converter.git"])
+        print("Update complete.")
+        return
+
+    SOFFICE_PATH = find_soffice()
+    if not SOFFICE_PATH:
+        print("LibreOffice CLI tools not found. Please install 'soffice.exe'.")
+        return
+
+    # Source folder input
+    src_folder = input("\nEnter SOURCE folder path: ").strip().replace('"', '').replace("'", "").replace("\\", "/")
+    while not os.path.isdir(src_folder):
+        src_folder = input("Invalid path. Enter SOURCE folder path: ").strip().replace("\\", "/")
+
+    # Destination folder input
+    dest_folder = input("Enter DESTINATION folder path: ").strip().replace("\\", "/")
+    ensure_dir(dest_folder)
+
+    failed_folder = os.path.join(dest_folder, "Failed")
+    ensure_dir(failed_folder)
+
+    max_workers = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+
+    # Temporary working dir
+    tmp_dir = tempfile.mkdtemp(prefix="qpw_work_")
+    print(f"Temp dir: {tmp_dir}")
+    copy_files(src_folder, tmp_dir, desc="Populating temp")
+
+    # Convert all
+    succeeded, failed = convert_all(tmp_dir, dest_folder, failed_folder, max_workers)
+
+    shutil.rmtree(tmp_dir)
+    print(f"\nConversion complete. {len(succeeded)} succeeded, {len(failed)} failed.")
+
+if __name__ == "__main__":
+    main()
