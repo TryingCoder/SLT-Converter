@@ -196,7 +196,7 @@ def main():
     # Temp working directory
     working_dir = tempfile.mkdtemp(prefix="qpw_work_")
     try:
-        copy_files(args.source, working_dir, ext=".qpw", progress_desc="Populating")
+        copy_files(args.source, working_dir, ext=".qpw", progress_desc="Populating working directory: {working_dir}")
         duplicates_removed = cleanup_duplicate_files(working_dir, extension=".qpw", prompt_user=not args.skip_duplicates)
 
         soffice_path = find_soffice()
