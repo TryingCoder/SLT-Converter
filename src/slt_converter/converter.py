@@ -170,33 +170,52 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # Main CLI
 # -----------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
-    parser.add_argument("--source", "-s", required=True, help="Source folder containing QPW files")
-    parser.add_argument("--dest", "-d", required=True, help="Destination folder for XLSX files")
-    parser.add_argument("--backup", "-b", help="Optional backup folder")
+    parser = argparse.ArgumentParser(
+        description="SLT-Converter: Batch convert QPW files to XLSX using LibreOffice."
+    )
+    parser.add_argument("--source", "-s", type=str, help="Source folder containing QPW files")
+    parser.add_argument("--dest", "-d", type=str, help="Destination folder for XLSX files")
+    parser.add_argument("--backup", "-b", type=str, help="Optional backup folder")
     parser.add_argument("--workers", "-w", type=int, default=4, help="Number of concurrent workers")
     parser.add_argument("--skip-duplicates", action="store_true", help="Skip duplicate file prompt")
+    parser.add_argument("--update", action="store_true", help="Update SLT-Converter from GitHub")
+    parser.add_argument("-?", "--help", action="help", help="Show this help message and exit")
+
     args = parser.parse_args()
 
-    if not os.path.isdir(args.source):
-        print(f"❌ Source folder does not exist: {args.source}")
+    # ---------------- Update ----------------
+    if args.update:
+        print("\nUpdating SLT-Converter from GitHub...")
+        subprocess.run([
+            sys.executable, "-m", "pip",
+            "install", "--upgrade",
+            "git+https://github.com/TryingCoder/SLT-Converter.git"
+        ], check=True)
+        print("Update complete!")
         return
 
-    ensure_dir(args.dest)
-    failed_folder = os.path.join(args.dest, "Failed")
+    # ---------------- Source / Destination ----------------
+    source_folder = args.source or input("Enter SOURCE folder path: ").strip()
+    while not os.path.isdir(source_folder):
+        print("❌ Invalid path. Try again.")
+        source_folder = input("Enter SOURCE folder path: ").strip()
+
+    dest_folder = args.dest or input("Enter DESTINATION folder path: ").strip()
+    ensure_dir(dest_folder)
+    failed_folder = os.path.join(dest_folder, "Failed")
     ensure_dir(failed_folder)
 
     # Backup if requested
     if args.backup:
         ensure_dir(args.backup)
-        for f in [f for f in os.listdir(args.source) if f.lower().endswith(".qpw")]:
-            shutil.copy2(os.path.join(args.source, f), os.path.join(args.backup, f))
+        for f in [f for f in os.listdir(source_folder) if f.lower().endswith(".qpw")]:
+            shutil.copy2(os.path.join(source_folder, f), os.path.join(args.backup, f))
         print(f"✅ Backup completed at: {args.backup}")
 
     # Temp working directory
     working_dir = tempfile.mkdtemp(prefix="qpw_work_")
     try:
-        copy_files(args.source, working_dir, ext=".qpw", progress_desc="Populating working directory: {working_dir}")
+        copy_files(source_folder, working_dir, ext=".qpw", progress_desc=f"Populating working directory: {working_dir}")
         duplicates_removed = cleanup_duplicate_files(working_dir, extension=".qpw", prompt_user=not args.skip_duplicates)
 
         soffice_path = find_soffice()
@@ -205,14 +224,16 @@ def main():
             return
 
         print(f"\nConverting {len([f for f in os.listdir(working_dir) if f.lower().endswith('.qpw')])} files...")
-        succeeded, failed = convert_all_with_retries(working_dir, args.dest, failed_folder, args.workers, soffice_path)
+        succeeded, failed = convert_all_with_retries(
+            working_dir, dest_folder, failed_folder, args.workers, soffice_path
+        )
 
     finally:
         shutil.rmtree(working_dir)
         print(f"\nTemp working directory removed: {working_dir}")
 
     # Summary
-    total_files = len([f for f in os.listdir(args.source) if f.lower().endswith('.qpw')])
+    total_files = len([f for f in os.listdir(source_folder) if f.lower().endswith('.qpw')])
     converted_files = len(succeeded)
     failed_files = len(failed)
 

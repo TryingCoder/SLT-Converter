@@ -14,7 +14,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "slt-convert = slt_converter.__main__:main",
+            "slt = slt_converter.__main__:main",
         ],
     },
     python_requires=">=3.10",

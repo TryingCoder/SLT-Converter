@@ -27,31 +27,32 @@ It supports optional backup, duplicate cleanup, and separates failed conversions
 ```bash
 pip install git+https://github.com/TryingCoder/SLT-Converter
 ```
-After installation, the CLI command is available:
+# Usage
+## Normal conversion
 ```bash
-slt-convert --source /path/to/qpw_files --dest /path/to/output_folder
+slt --source ./qpw_files --dest ./xlsx_output
 ```
-Add SLT-Converter to your PATH on Windows:
+## Skip duplicates
 ```bash
-python -m slt_converter.path_entry
+slt --source ./qpw_files --dest ./xlsx_output --skip-duplicates
 ```
-## Usage Examples
-### Basic Conversion:
+## Set concurrency
 ```bash
-slt-convert --source ./qpw_files --dest ./xlsx_output
+slt --source ./qpw_files --dest ./xlsx_output --workers 8
 ```
-### With Backup:
+
+## Update to latest version
 ```bash
-slt-convert --source ./qpw_files --dest ./xlsx_output --backup ./backup_folder
+slt --update
 ```
-### Skip Duplicate Cleanup:
+## Show help menu
 ```bash
-slt-convert --source ./qpw_files --dest ./xlsx_output --skip-duplicates
+slt --help
 ```
-### Define Max Workers:
 ```bash
-slt-convert --source ./qpw_files --dest ./xlsx_output --workers 8
+slt -?
 ```
+
 ## Notes
 
 - Failed conversions are copied to a Failed folder inside the destination directory.
