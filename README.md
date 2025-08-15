@@ -1,25 +1,39 @@
-# AIO File Converter Tool
+# SLT-Converter
+
+A Python-based CLI tool to batch convert `.qpw` files to `.xlsx` --for now functionality is limited to this
+
+---
 
 ## Features
 
-- Batch converts `.qpw` files to `.xlsx` using LibreOffice.
-- Cleans up leftover `.qpw` files and removes duplicate `.xlsx` files (with parenthesis and numbers).
-- Ensures every original file is converted, with final cross-check and reconversion if needed.
+- Batch converts `.qpw` files to `.xlsx`
+- Cleans up duplicate `.xlsx` files
+- Separates failed conversions for easy fault finding
+- CLI-based tool
+- Optional automatic PATH integration for Windows CLI usage
 
-## Usage
-
-```sh
-python src/converter.py [max_workers]
-```
-- `max_workers` (optional): Number of parallel conversion threads (default: 4).
+---
 
 ## Requirements
 
-- Python 3.x
-- LibreOffice installed (`soffice.exe` path found dynamically)
-- See `requirements.txt` for dependencies.
+- Python 3.6+
+- LibreOffice CLI tools (`soffice.exe`) installed
+- Python packages: `tqdm`, `pandas`, `openpyxl` (handled automatically during install)
 
-## Notes
+---
 
-- Working on expanding functionality to include conversions to different file types, not just limited to .qpw -> .xlsx
-- This project was started in an effort solve a problem I encountered while solving an issue for a client
+## Installation
+
+```bash
+pip install git+https://github.com/TryingCoder/SLT-Converter.git
+
+---
+
+## Windows Setup
+
+After installation:
+
+The installer checks if the Python Scripts folder (where CLI commands are installed) is in your PATH.
+
+If missing, you'll see a prompt:
+Add slt-converter to PATH? (y/n)

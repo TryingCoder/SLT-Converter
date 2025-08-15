@@ -1,57 +1,46 @@
 import os
 import sys
-import shutil
 import subprocess
-import ctypes
 
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
+def get_scripts_path():
+    """Get he user-specific Python Scripts folder path."""
+    user_base = os.path.expanduser("~")
+    # Get Python version
+    py_version = f"Python{sys.version_info.major}{sys.version_info.minor}"
+    scripts_path = os.path.join(user_base, "AppData", "Roaming", "Python", py_version, "Scripts")
+    return scripts_path
 
-def exe_in_path(exe_name):
-    return shutil.which(exe_name) is not None
+def is_in_path(path):
+    """Check if a given path is in the current PATH environment variable."""
+    current_paths = os.environ.get("PATH", "").split(os.pathsep)
+    return any(os.path.normcase(path) == os.path.normcase(p) for p in current_paths)
 
-def add_to_user_path(path):
-    subprocess.run([
-        "setx", "PATH", f"%PATH%;{path}"
-    ], shell=True)
-    print(f"[+] Added {path} to your USER PATH. Restart your terminal.")
-
-def add_to_system_path(path):
-    subprocess.run([
-        "powershell",
-        "-Command",
-        f'Set-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" '
-        f'-Name PATH -Value ((Get-ItemProperty -Path "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" '
-        f'-Name PATH).Path + ";{path}")'
-    ], shell=True)
-    print(f"[+] Added {path} to your SYSTEM PATH. You may need to log out and back in.")
-
-def main():
-    if os.name != "nt":  # Only run on Windows
+def add_to_path_prompt():
+    """Prompt user to add Scripts folder to PATH permanently."""
+    scripts_path = get_scripts_path()
+    if not os.path.exists(scripts_path):
+        print(f"Scripts folder does not exist: {scripts_path}")
+        print("You may need to run `pip install --user` first to create it.")
         return
-    
-    script_dir = os.path.join(os.path.dirname(sys.executable), "Scripts")
-    cli_exe = "slt-converter.exe"  # The entry point pip creates
-    
-    if exe_in_path(cli_exe):
-        return  # Already in PATH
-    
-    print(f"[!] The CLI command '{cli_exe}' is not in your PATH.")
-    choice = input("(Y) Add for this user only (A) Add system-wide (N) No: ").strip().lower()
-    
-    if choice == "y":
-        add_to_user_path(script_dir)
-    elif choice == "a":
-        if is_admin():
-            add_to_system_path(script_dir)
-        else:
-            print("[!] You must run this with admin rights for system PATH. Falling back to user PATH.")
-            add_to_user_path(script_dir)
-    else:
-        print("[i] Skipping PATH modification. Some features may not work as expected.")
 
-if __name__ == "__main__":
-    main()
+    if is_in_path(scripts_path):
+        return  # Already in PATH
+
+    print(f"\nPython Scripts folder not found in PATH:\n  {scripts_path}")
+    choice = input("Add slt-converter to PATH? (Y)es/(N)o: ").strip().lower()
+    if choice not in ["y", "yes"]:
+        print("Skipping PATH update. You will need to run the CLI using full path or add it manually.")
+        return
+
+    try:
+        # Use setx to add to user PATH
+        current_path = os.environ.get("PATH", "")
+        new_path = f"{scripts_path};{current_path}"
+        subprocess.run(f'setx PATH "{new_path}"', shell=True, check=True)
+        print("\nScripts folder added to user PATH. You may need to restart your terminal.")
+    except Exception as e:
+        print(f"Failed to update PATH: {e}")
+
+def ensure_path():
+    if os.name == "nt":
+        add_to_path_prompt()
