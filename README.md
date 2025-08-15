@@ -25,7 +25,7 @@ A Python-based CLI tool to batch convert `.qpw` files to `.xlsx` --for now funct
 ## Installation
 
 ```bash
-pip install git+https://github.com/TryingCoder/SLT-Converter.git
+pip install git+https://github.com/TryingCoder/SLT-Converter
 
 ## After installation, run:
 
