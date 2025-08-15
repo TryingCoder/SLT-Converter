@@ -1,144 +1,233 @@
 import os
-import sys
-import subprocess
-import tempfile
+import re
 import shutil
+import subprocess
+import sys
+import tempfile
+import importlib.util
+import site
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .utils import validate_file_format
 
 # -----------------------------
 # Ensure tqdm installed
 # -----------------------------
-def ensure_tqdm():
-    try:
-        import tqdm
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
-        import tqdm
-    return tqdm
+def ensure_tqdm_installed():
+    if importlib.util.find_spec("tqdm") is None:
+        print("Installing required package: tqdm...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-warn-script-location", "tqdm"])
+    user_site = site.getusersitepackages()
+    if user_site not in sys.path and os.path.exists(user_site):
+        sys.path.append(user_site)
+    global tqdm
+    from tqdm import tqdm
 
-tqdm = ensure_tqdm()
+ensure_tqdm_installed()
+from tqdm import tqdm
 
-SOFFICE_PATH = None
-
-def find_soffice():
-    import shutil
-    paths = [
-        r"C:\Program Files\LibreOffice\program\soffice.exe",
-        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"
-    ]
-    for p in paths:
-        if os.path.isfile(p):
-            return p
-    # Try in PATH
-    soffice_in_path = shutil.which("soffice")
-    if soffice_in_path:
-        return soffice_in_path
-    return None
-
+# -----------------------------
+# Utility Functions
+# -----------------------------
 def ensure_dir(path):
-    os.makedirs(path, exist_ok=True)
+    if not os.path.exists(path):
+        os.makedirs(path)
 
-def copy_files(src, dst, ext=".qpw", desc="Copying"):
-    files = [f for f in os.listdir(src) if f.lower().endswith(ext.lower())]
-    ensure_dir(dst)
-    with tqdm.tqdm(total=len(files), desc=desc, unit="file") as pbar:
-        for f in files:
-            shutil.copy2(os.path.join(src, f), os.path.join(dst, f))
+def copy_files(src_dir, dst_dir, ext=".qpw", progress_desc=None):
+    files = [f for f in os.listdir(src_dir) if f.lower().endswith(ext.lower())]
+    ensure_dir(dst_dir)
+    with tqdm(total=len(files), desc=progress_desc or "Copying files", unit="file") as pbar:
+        for filename in files:
+            shutil.copy2(os.path.join(src_dir, filename), os.path.join(dst_dir, filename))
             pbar.update(1)
 
-def convert_file(input_file, out_dir):
-    output_file = os.path.join(out_dir, os.path.basename(input_file).replace(".qpw", ".xlsx"))
+def find_duplicates(folder, extension=".qpw"):
+    files = [f for f in os.listdir(folder) if f.lower().endswith(extension.lower())]
+    base_map = {}
+    for filename in files:
+        match = re.match(r"^(.*?)(?: \((\d+)\))?{}$".format(re.escape(extension)), filename, re.IGNORECASE)
+        if match:
+            base = match.group(1).lower()
+            num = int(match.group(2)) if match.group(2) else 0
+            base_map.setdefault(base, []).append((num, filename))
+    duplicates_to_remove = []
+    for base, versions in base_map.items():
+        versions.sort()
+        for _, filename in versions[1:]:
+            duplicates_to_remove.append(filename)
+    return duplicates_to_remove
+
+def cleanup_duplicate_files(folder, extension=".qpw", prompt_user=True):
+    duplicates_to_remove = find_duplicates(folder, extension)
+    if duplicates_to_remove:
+        if prompt_user:
+            print("\nDuplicate files found:\n")
+            for filename in duplicates_to_remove:
+                print(f" - {filename}")
+            if input("\nRemove duplicate files? (Y)es/(N)o: ").strip().lower() in ["y", "yes"]:
+                with tqdm(total=len(duplicates_to_remove), desc="Removing Duplicates", unit="file") as pbar:
+                    for filename in duplicates_to_remove:
+                        os.remove(os.path.join(folder, filename))
+                        pbar.update(1)
+                return len(duplicates_to_remove)
+            else:
+                print("\nNo duplicates removed.")
+                return 0
+        else:
+            return 0
+    else:
+        if prompt_user:
+            print("\nNo duplicate files found.")
+        return 0
+
+# -----------------------------
+# LibreOffice detection
+# -----------------------------
+def find_soffice():
+    """Cross-platform LibreOffice soffice detection."""
+    if sys.platform == "win32":
+        possible_paths = [
+            os.environ.get("PROGRAMFILES", r"C:\Program Files") + r"\LibreOffice\program\soffice.exe",
+            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)") + r"\LibreOffice\program\soffice.exe",
+        ]
+    elif sys.platform == "darwin":
+        possible_paths = ["/Applications/LibreOffice.app/Contents/MacOS/soffice"]
+    else:
+        possible_paths = ["/usr/bin/soffice", "/usr/local/bin/soffice"]
+
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+# -----------------------------
+# Conversion functions
+# -----------------------------
+def convert_qpw_to_xlsx(input_file, output_dir, soffice_path=None):
+    if soffice_path is None:
+        soffice_path = find_soffice()
+    if soffice_path is None:
+        raise FileNotFoundError("LibreOffice soffice executable not found.")
+    output_file = os.path.join(output_dir, os.path.basename(input_file).replace('.qpw', '.xlsx'))
     if os.path.exists(output_file):
         return True
     try:
-        subprocess.run([SOFFICE_PATH, "--headless", "--convert-to", "xlsx", input_file, "--outdir", out_dir],
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        command = [soffice_path, '--headless', '--convert-to', 'xlsx', input_file, '--outdir', output_dir]
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return os.path.exists(output_file)
     except Exception:
         return False
 
-def convert_all(src_folder, dest_folder, failed_folder, max_workers=4):
+def convert_all_with_retries(source_folder, converted_folder, failed_folder, max_workers=4, soffice_path=None):
     ensure_dir(failed_folder)
-    all_files = [f for f in os.listdir(src_folder) if f.lower().endswith(".qpw")]
-    pending = set(all_files)
-    succeeded = set()
-    last_pending = len(pending)
+    all_files = [f for f in os.listdir(source_folder) if f.lower().endswith('.qpw')]
+    pending_files = set(all_files)
+    succeeded_files = set()
+    last_pending_count = len(pending_files)
 
-    with tqdm.tqdm(total=len(all_files), desc="Converting", unit="file") as pbar:
+    with tqdm(total=len(all_files), desc="Converting", unit="file") as pbar:
         attempt = 1
-        while pending:
+        while pending_files:
+            current_attempt_files = list(pending_files)
             failed_this_round = set()
-            current_files = list(pending)
+
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = {executor.submit(convert_file, os.path.join(src_folder, f), dest_folder): f for f in current_files}
-                for fut in as_completed(futures):
-                    f = futures[fut]
-                    success = fut.result()
+                futures = {executor.submit(convert_qpw_to_xlsx, os.path.join(source_folder, f), converted_folder, soffice_path): f for f in current_attempt_files}
+                for future in as_completed(futures):
+                    filename = futures[future]
+                    success = future.result()
                     if success:
-                        if f not in succeeded:
+                        if filename not in succeeded_files:
                             pbar.update(1)
-                            succeeded.add(f)
-                        pending.discard(f)
-                        # Remove from failed folder
-                        failed_path = os.path.join(failed_folder, f)
+                            succeeded_files.add(filename)
+                            pending_files.discard(filename)
+                        failed_path = os.path.join(failed_folder, filename)
                         if os.path.exists(failed_path):
                             os.remove(failed_path)
                     else:
-                        failed_this_round.add(f)
-                        src_file = os.path.join(src_folder, f)
-                        dst_file = os.path.join(failed_folder, f)
+                        failed_this_round.add(filename)
+                        src_file = os.path.join(source_folder, filename)
+                        dst_file = os.path.join(failed_folder, filename)
                         if not os.path.exists(dst_file):
                             shutil.copy2(src_file, dst_file)
+                        # Log failure
+                        with open(os.path.join(failed_folder, "failed_conversions.log"), "a") as log_file:
+                            log_file.write(f"{filename}\n")
 
-            if not failed_this_round or len(failed_this_round) == last_pending:
+            if not failed_this_round:
+                break  # All done
+
+            if len(failed_this_round) == last_pending_count:
+                print(f"\nNo further progress after attempt {attempt}, {len(failed_this_round)} files failed.")
                 break
-            pending = failed_this_round
-            last_pending = len(pending)
+
+            pending_files = failed_this_round
+            last_pending_count = len(pending_files)
             attempt += 1
 
-    return succeeded, pending
+    return succeeded_files, pending_files
 
+# -----------------------------
+# Main CLI
+# -----------------------------
 def main():
-    global SOFFICE_PATH
+    parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
+    parser.add_argument("--source", "-s", required=True, help="Source folder containing QPW files")
+    parser.add_argument("--dest", "-d", required=True, help="Destination folder for XLSX files")
+    parser.add_argument("--backup", "-b", help="Optional backup folder")
+    parser.add_argument("--workers", "-w", type=int, default=4, help="Number of concurrent workers")
+    parser.add_argument("--skip-duplicates", action="store_true", help="Skip duplicate file prompt")
+    args = parser.parse_args()
 
-    # Handle --update first
-    if len(sys.argv) > 1 and sys.argv[1] == "--update":
-        print("Updating SLT-Converter from GitHub...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade",
-                               "git+https://github.com/TryingCoder/SLT-Converter.git"])
-        print("Update complete.")
+    if not os.path.isdir(args.source):
+        print(f"❌ Source folder does not exist: {args.source}")
         return
 
-    SOFFICE_PATH = find_soffice()
-    if not SOFFICE_PATH:
-        print("LibreOffice CLI tools not found. Please install 'soffice.exe'.")
-        return
-
-    # Source folder input
-    src_folder = input("\nEnter SOURCE folder path: ").strip().replace('"', '').replace("'", "").replace("\\", "/")
-    while not os.path.isdir(src_folder):
-        src_folder = input("Invalid path. Enter SOURCE folder path: ").strip().replace("\\", "/")
-
-    # Destination folder input
-    dest_folder = input("Enter DESTINATION folder path: ").strip().replace("\\", "/")
-    ensure_dir(dest_folder)
-
-    failed_folder = os.path.join(dest_folder, "Failed")
+    ensure_dir(args.dest)
+    failed_folder = os.path.join(args.dest, "Failed")
     ensure_dir(failed_folder)
 
-    max_workers = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+    # Backup if requested
+    if args.backup:
+        ensure_dir(args.backup)
+        for f in [f for f in os.listdir(args.source) if f.lower().endswith(".qpw")]:
+            shutil.copy2(os.path.join(args.source, f), os.path.join(args.backup, f))
+        print(f"✅ Backup completed at: {args.backup}")
 
-    # Temporary working dir
-    tmp_dir = tempfile.mkdtemp(prefix="qpw_work_")
-    print(f"Temp dir: {tmp_dir}")
-    copy_files(src_folder, tmp_dir, desc="Populating temp")
+    # Temp working directory
+    working_dir = tempfile.mkdtemp(prefix="qpw_work_")
+    try:
+        copy_files(args.source, working_dir, ext=".qpw", progress_desc="Populating")
+        duplicates_removed = cleanup_duplicate_files(working_dir, extension=".qpw", prompt_user=not args.skip_duplicates)
 
-    # Convert all
-    succeeded, failed = convert_all(tmp_dir, dest_folder, failed_folder, max_workers)
+        soffice_path = find_soffice()
+        if soffice_path is None:
+            print("LibreOffice CLI not found. Install LibreOffice first.")
+            return
 
-    shutil.rmtree(tmp_dir)
-    print(f"\nConversion complete. {len(succeeded)} succeeded, {len(failed)} failed.")
+        print(f"\nConverting {len([f for f in os.listdir(working_dir) if f.lower().endswith('.qpw')])} files...")
+        succeeded, failed = convert_all_with_retries(working_dir, args.dest, failed_folder, args.workers, soffice_path)
+
+    finally:
+        shutil.rmtree(working_dir)
+        print(f"\nTemp working directory removed: {working_dir}")
+
+    # Summary
+    total_files = len([f for f in os.listdir(args.source) if f.lower().endswith('.qpw')])
+    converted_files = len(succeeded)
+    failed_files = len(failed)
+
+    print("\n===== Conversion Summary =====")
+    print(f"✅ Total QPW files processed: {total_files}")
+    print(f"✅ Successfully converted:    {converted_files}")
+    print(f"❌ Failed after all retries:  {failed_files}")
+    print(f"✅ Duplicate files removed: {duplicates_removed}")
+    print("==============================")
+
+    if not failed and os.path.exists(failed_folder) and not os.listdir(failed_folder):
+        os.rmdir(failed_folder)
+        print(f"\n✅ No failed conversions. Removed Failed folder: {failed_folder}")
+
+    print("\n✅ All operations complete.")
 
 if __name__ == "__main__":
     main()

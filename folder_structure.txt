@@ -1,0 +1,21 @@
+Folder PATH listing for volume Data
+Volume serial number is 68DC-94B1
+S:.
+|   .gitignore
+|   folder_structure.txt
+|   LICENSE
+|   README.md
+|   requirements.txt
+|   setup.py
+|   
++---src
+|   \---slt_converter
+|           converter.py
+|           path_entry.py
+|           utils.py
+|           __init__.py
+|           __main__.py
+|           
+\---tests
+        __init__.py
+        

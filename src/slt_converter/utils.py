@@ -1,20 +1,35 @@
 import os
+import shutil
 import re
 
-def is_qpw(file):
-    return file.lower().endswith(".qpw")
+def validate_file_format(filepath):
+    return os.path.isfile(filepath) and filepath.lower().endswith(".qpw")
 
-def find_dupes(folder, ext=".qpw"):
-    files = [f for f in os.listdir(folder) if f.lower().endswith(ext.lower())]
-    base_map = {}
+def create_backup(src_folder, backup_folder):
+    if not os.path.exists(backup_folder):
+        shutil.copytree(src_folder, backup_folder)
+
+def clean_duplicates(folder, ext=".xlsx"):
+    files = [f for f in os.listdir(folder) if f.lower().endswith(ext)]
+    seen = set()
     for f in files:
-        match = re.match(r"^(.*?)(?: \((\d+)\))?{}".format(re.escape(ext)), f, re.IGNORECASE)
-        if match:
-            base = match.group(1).lower()
-            num = int(match.group(2)) if match.group(2) else 0
-            base_map.setdefault(base, []).append((num, f))
-    to_remove = []
-    for base, versions in base_map.items():
-        versions.sort()
-        to_remove.extend(f for _, f in versions[1:])
-    return to_remove
+        base = re.sub(r"\(\d+\)", "", os.path.splitext(f)[0]).strip()
+        if base.lower() in seen:
+            os.remove(os.path.join(folder, f))
+        else:
+            seen.add(base.lower())
+
+def get_files(folder, ext=".qpw"):
+    return [
+        os.path.join(folder, f)
+        for f in os.listdir(folder)
+        if f.lower().endswith(ext)
+    ]
+
+def retry(func, retries=3, *args, **kwargs):
+    for attempt in range(retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
