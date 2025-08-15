@@ -7,8 +7,6 @@ import tempfile
 import importlib.util
 import site
 import argparse
-import requests
-from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
