@@ -221,7 +221,7 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
-    parser.add_argument("-?", "--help", action="help", help="Display this help menu")
+    parser.add_argument("-?", action="help", help=argparse.SUPPRESS)  # optional -? shortcut
     parser.add_argument("--source", "-s", help="Source folder containing QPW files")
     parser.add_argument("--dest", "-d", help="Destination folder for XLSX files")
     parser.add_argument("--backup", "-b", help="Optional backup folder")
