@@ -1,29 +1,36 @@
+import platform
 from setuptools import setup, find_packages
+from setuptools.command.install import install
+
+
+class PostInstall(install):
+    """Custom install step to run PATH prompt on Windows."""
+    def run(self):
+        install.run(self)  # normal install first
+        if platform.system() == "Windows":
+            try:
+                from src.slt_converter import path_entry
+                path_entry.main()
+            except Exception as e:
+                print(f"[!] PATH setup skipped: {e}")
+
 
 setup(
     name="slt-converter",
-    version="0.1.0",
-    author="Ethan Brand",
-    author_email="brandet251@gmail.com",
-    description="AIO File Converter - In Progress",
-    long_description=open("README.md", "r", encoding="utf-8").read(),
-    long_description_content_type="text/markdown",
-    url="https://github.com/TryingCoder/SLT-Converter",
+    version="1.0.0",
+    author="Your Name",
+    author_email="you@example.com",
+    description="Convert SLT files using LibreOffice CLI tools",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
-    install_requires=[
-        "tqdm",
-        "pandas",
-        "openpyxl",
-    ],
+    python_requires=">=3.7",
+    install_requires=[],
     entry_points={
         "console_scripts": [
-            "slt-converter=slt_converter.converter:main",
+            "slt-convert=slt_converter.converter:main",  # CLI command
         ],
     },
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: OS Independent",
-    ],
-    python_requires='>=3.6',
+    cmdclass={
+        "install": PostInstall,
+    },
 )
