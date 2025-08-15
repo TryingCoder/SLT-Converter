@@ -2,24 +2,25 @@ from setuptools import setup, find_packages
 
 setup(
     name="slt-converter",
-    version="0.1.1",
-    description="BETA | QPW to XLSX Converter - More features coming soon!",
-    author="TryingCoder",
+    version="0.1.0 (beta)",
+    description="QPW to XLSX converter using LibreOffice",
+    author="Your Name",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
+    python_requires=">=3.10",
     install_requires=[
-        "pandas>=2.0",
-        "openpyxl>=3.0",
-        "tqdm>=4.60",
+        "tqdm>=4.65.0",
         "requests>=2.31.0",
+        "beautifulsoup4>=4.12.2",
     ],
     entry_points={
         "console_scripts": [
-            "slt = slt_converter.__main__:main",
+            "slt_converter=converter:main"
         ],
     },
-    python_requires=">=3.10",
     include_package_data=True,
-    zip_safe=False,
-    url="https://github.com/TryingCoder/SLT-Converter",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+    ],
 )

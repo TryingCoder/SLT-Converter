@@ -1,0 +1,15 @@
+PackageIdentifier: TryingCoder.SLTConverter
+PackageVersion: 0.1.0 (beta)
+PackageName: SLT-Converter
+Publisher: StratLynk Technologies (Registration Pending)
+License: MIT
+ShortDescription: Current functionality limited to converting .qpw files to .xlsx format.
+Installers:
+  - Architecture: x64
+    InstallerType: exe
+    InstallerUrl: https://github.com/TryingCoder/SLT-Converter/releases/download/v0.1.0/slt_converter.exe
+    InstallerSha256: <SHA256_HASH_HERE>
+    Switches:
+      Silent: /S
+      SilentWithProgress: /S
+      Interactive: ""

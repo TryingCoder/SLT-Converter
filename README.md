@@ -1,4 +1,4 @@
-# SLT-Converter (Beta)
+# SLT-Converter v0.1.0 (Beta)
 
 A Python-based CLI tool to batch convert `.qpw` files to `.xlsx` using LibreOffice headless.  
 It supports optional backup, duplicate cleanup, and separates failed conversions for easy fault finding.
@@ -17,15 +17,13 @@ It supports optional backup, duplicate cleanup, and separates failed conversions
 
 ## Requirements
 
-- Python 3.10+
-- LibreOffice CLI tools (`soffice` executable)
-- Python packages: `tqdm`, `pandas`, `openpyxl`
+See requirements.txt
 
 ---
 
 ## Installation
 ```bash
-pip install git+https://github.com/TryingCoder/SLT-Converter
+winget install https://github.com/TryingCoder/SLT-Converter/releases/download/v0.1.0/slt_converter.exe
 ```
 # Usage
 ## Normal conversion
@@ -50,7 +48,7 @@ slt --update
 slt --help
 ```
 ```bash
-slt -?
+slt -h
 ```
 
 ## Notes

@@ -1,21 +1,17 @@
 import os
-import re
+import sys
 import shutil
 import subprocess
-import sys
 import tempfile
-import importlib.util
-import site
 import argparse
+import site
+import importlib.util
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
-import requests
-from bs4 import BeautifulSoup
 
 # -----------------------------
-# Version (Beta)
+# Version
 # -----------------------------
-__version__ = "0.1.1"
+__version__ = "0.1.0 (beta)"
 
 # -----------------------------
 # Ensure tqdm installed
@@ -48,6 +44,7 @@ def copy_files(src_dir, dst_dir, ext=".qpw", progress_desc=None):
             pbar.update(1)
 
 def find_duplicates(folder, extension=".qpw"):
+    import re
     files = [f for f in os.listdir(folder) if f.lower().endswith(extension.lower())]
     base_map = {}
     for filename in files:
@@ -90,6 +87,7 @@ def cleanup_duplicate_files(folder, extension=".qpw", prompt_user=True):
 # LibreOffice detection & installation
 # -----------------------------
 def find_soffice():
+    """Cross-platform LibreOffice soffice detection."""
     possible_paths = []
     if sys.platform == "win32":
         possible_paths = [
@@ -106,37 +104,20 @@ def find_soffice():
             return path
     return None
 
-def download_with_progress(url, dest):
-    response = requests.get(url, stream=True)
-    total = int(response.headers.get('content-length', 0))
-    with open(dest, 'wb') as file, tqdm(
-        desc="Downloading LibreOffice",
-        total=total,
-        unit='B',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as bar:
-        for data in response.iter_content(chunk_size=1024):
-            file.write(data)
-            bar.update(len(data))
-
 def install_libreoffice():
+    """Install LibreOffice CLI tools on Windows or Linux."""
     print("\nLibreOffice CLI not found. Installing...")
+
     if sys.platform == "win32":
-        # Scrape mirrors page to find latest MSI
-        mirror_page = requests.get("https://download.documentfoundation.org/libreoffice/stable/")
-        soup = BeautifulSoup(mirror_page.text, "html.parser")
-        # Fallback to a fixed stable version if scraping fails
-        url = "https://download.documentfoundation.org/libreoffice/stable/7.6.4/win/x86_64/LibreOffice_7.6.4_Win_x64.msi"
-        installer = os.path.join(tempfile.gettempdir(), "LibreOffice.msi")
-        try:
-            download_with_progress(url, installer)
-            print("Installing LibreOffice headlessly...")
-            subprocess.run(["msiexec", "/i", installer, "/quiet", "/norestart"], check=True)
-            os.remove(installer)
-        except Exception as e:
-            print(f"❌ Installation failed: {e}")
-            return False
+        if shutil.which("winget") is None:
+            print("❌ Winget not found. Install LibreOffice manually from https://www.libreoffice.org/download/download/")
+            return
+        subprocess.run([
+            "winget", "install", "--id", "LibreOffice.LibreOffice", "--silent",
+            "--accept-package-agreements", "--accept-source-agreements"
+        ], check=True)
+        print("✅ LibreOffice installed successfully!")
+
     elif sys.platform.startswith("linux"):
         if shutil.which("apt"):
             subprocess.run(["sudo", "apt", "update"], check=True)
@@ -145,11 +126,8 @@ def install_libreoffice():
             subprocess.run(["sudo", "yum", "install", "-y", "libreoffice"], check=True)
         else:
             print("Unsupported Linux distro. Install LibreOffice manually.")
-            return False
     else:
         print("Unsupported OS. Install LibreOffice manually.")
-        return False
-    return True
 
 # -----------------------------
 # Conversion functions
@@ -220,8 +198,7 @@ def convert_all_with_retries(source_folder, converted_folder, failed_folder, max
 # Main CLI
 # -----------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Convert QPW files to XLSX using LibreOffice.")
-    parser.add_argument("-?", action="help", help=argparse.SUPPRESS)  # optional -? shortcut
+    parser = argparse.ArgumentParser(description="SLT Converter is in beta. More features coming soon!")
     parser.add_argument("--source", "-s", help="Source folder containing QPW files")
     parser.add_argument("--dest", "-d", help="Destination folder for XLSX files")
     parser.add_argument("--backup", "-b", help="Optional backup folder")
@@ -236,9 +213,9 @@ def main():
         return
 
     if args.update:
-        print("\nUpdating SLT-Converter from GitHub...\n")
+        print("\nUpdating SLT-Converter from GitHub...")
         subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "git+https://github.com/TryingCoder/SLT-Converter.git"], check=True)
-        print("\nUpdate complete!\n")
+        print("Update complete!")
         return
 
     if not args.source or not os.path.isdir(args.source):
@@ -265,12 +242,10 @@ def main():
     if soffice_path is None:
         choice = input("\nLibreOffice CLI not found. Install now? (Y/N): ").strip().lower()
         if choice in ("y", "yes"):
-            if not install_libreoffice():
-                print("❌ LibreOffice installation failed. Install manually.")
-                return
+            install_libreoffice()
             soffice_path = find_soffice()
             if soffice_path is None:
-                print("❌ LibreOffice CLI still not found after install.")
+                print("❌ LibreOffice installation failed. Install manually.")
                 return
         else:
             print("❌ Install LibreOffice CLI first.")
@@ -291,9 +266,9 @@ def main():
     failed_files = len(failed)
 
     print("\n===== Conversion Summary =====")
-    print(f"✅ Total QPW files processed: {total_files}")
+    print(f"✅ Total files processed: {total_files}")
     print(f"✅ Successfully converted:    {converted_files}")
-    print(f"❌ Failed after all retries:  {failed_files}")
+    print(f"❌ Failed Conversions:  {failed_files}")
     print(f"✅ Duplicate files removed: {duplicates_removed}")
     print("==============================")
 
