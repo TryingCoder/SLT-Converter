@@ -56,4 +56,4 @@ slt -h
 - Failed conversions are copied to a Failed folder inside the destination directory.
 - Temporary working folders are automatically cleaned up.
 - Working on expansion to add more features
-- Submit requests to thebrandbackup1@gmail.com or feel free to contribute :D
+- Submit requests to pingme@tryingcoder.com or feel free to contribute :D
